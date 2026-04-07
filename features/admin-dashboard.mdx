@@ -1,0 +1,141 @@
+---
+title: "Admin dashboard"
+description: "Full control over orders, users, and roles from the administrative dashboard."
+---
+
+The admin dashboard is the central control panel for Halcon. Administrators have full visibility over every order, user, and role in the system, and are the only role that can register new users and manage permissions.
+
+## Accessing the admin dashboard
+
+Navigate to `/admin/dashboard` after logging in with an **Admin** role account. The root path (`/`) automatically redirects Admin users to the dashboard after authentication.
+
+```
+GET /admin/dashboard
+```
+
+This route is protected by the `auth` and `role:Admin` middleware. Any authenticated user without the Admin role is blocked from accessing it.
+
+## Key capabilities
+
+<CardGroup cols={2}>
+  <Card title="User management" icon="users">
+    Create new user accounts and assign roles. Only admins can register users.
+  </Card>
+  <Card title="Order oversight" icon="list-check">
+    View, search, edit, and manage all orders across every department.
+  </Card>
+  <Card title="Order deletion" icon="trash">
+    Delete orders permanently. Confirm carefully — deletion is irreversible.
+  </Card>
+  <Card title="Role management" icon="shield-halved">
+    Create and edit roles to control what each department can access.
+  </Card>
+  <Card title="Materials & stock" icon="boxes-stacked">
+    Full access to warehouse stock and material records alongside the Almacén role.
+  </Card>
+  <Card title="Provider management" icon="truck">
+    Full access to provider records alongside the Compras role.
+  </Card>
+</CardGroup>
+
+## User management
+
+<Warning>
+Only administrators can register new users. No other role has access to the user creation form or the `/users` resource routes.
+</Warning>
+
+To create a new user:
+
+<Steps>
+  <Step title="Open Users">
+    From the admin dashboard, navigate to **Users → New User**.
+  </Step>
+  <Step title="Fill in user details">
+    Enter the user's name, email address, and a temporary password.
+  </Step>
+  <Step title="Assign a role">
+    Select the appropriate role from the dropdown: **Admin**, **Ventas**, **Compras**, **Almacén**, **Ruta**, or **Cliente**. A user's role determines which dashboard they see after login and which resources they can access.
+  </Step>
+  <Step title="Save">
+    Click **Create User**. The user can now log in immediately with the credentials you set.
+  </Step>
+</Steps>
+
+The users resource is registered exclusively under the Admin middleware group:
+
+```php
+// routes/web.php
+Route::middleware(['auth', 'role:Admin'])->group(function () {
+    Route::resource('users', UserController::class);
+});
+```
+
+## Searching orders
+
+The admin order view supports filtering by the following criteria:
+
+| Filter | Description |
+|---|---|
+| Description | Partial or exact match on the order description |
+| Date | Filter orders by their creation date |
+| Status | Filter to `pending`, `in_route`, or `delivered` |
+
+Results are always sorted newest first, using the global scope on the `Order` model (`ORDER BY created_at DESC`).
+
+## Editing and modifying orders
+
+Admins can edit any field on any order regardless of its current status. To edit an order:
+
+1. Locate the order in the order list using search or by scrolling.
+2. Click **Edit** on the order card.
+3. Update the fields as needed.
+4. Click **Save** to apply the changes.
+
+Status changes made by an admin follow the same `pending → in_route → delivered` enum. Admins can move an order to any status at any time, bypassing the normal departmental workflow if needed.
+
+## Deleting orders
+
+Deleting an order permanently removes it from the database. The `Order` model does not use Laravel's `SoftDeletes` trait — there is no `deleted_at` field and no restore functionality.
+
+<Warning>
+Order deletion is permanent and irreversible. Confirm with the team before deleting any order in production.
+</Warning>
+
+To delete an order:
+
+1. Locate the order in the order list.
+2. Click **Delete**.
+3. The order is permanently removed from the database immediately.
+
+## Role management
+
+Admins can create and edit roles from the **Roles** section. Roles map to the named guards used in the route middleware (`role:Admin`, `role:Ventas`, etc.).
+
+To create a role:
+
+1. Navigate to **Roles → New Role**.
+2. Enter the role name — this must match the string used in route middleware.
+3. Click **Save**.
+
+To edit an existing role, click **Edit** next to the role in the roles list and update the name.
+
+The roles resource is restricted to admins:
+
+```php
+// routes/web.php
+Route::middleware(['auth', 'role:Admin'])->group(function () {
+    Route::resource('roles', RoleController::class);
+});
+```
+
+## Available admin resource routes
+
+The following resource routes are accessible to the Admin role. Full CRUD (index, create, store, show, edit, update, destroy) is available for each.
+
+| Resource | Route prefix | Shared with |
+|---|---|---|
+| Users | `/users` | Admin only |
+| Roles | `/roles` | Admin only |
+| Materials | `/materials` | Admin, Almacén |
+| Stock (warehouse) | `/stockAlmacenes` | Admin, Almacén |
+| Providers | `/providers` | Admin, Compras |

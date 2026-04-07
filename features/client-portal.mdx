@@ -1,0 +1,96 @@
+---
+title: "Client portal"
+description: "Give your customers real-time order visibility and delivery photo access through the client portal."
+---
+
+The client portal gives customers a dedicated, read-only view of their orders. Clients can track their current order, review past orders, and view photographic delivery evidence — all without being able to modify any data.
+
+## How clients get access
+
+Clients do not self-register. An administrator creates a **Cliente** role account on their behalf and shares the credentials.
+
+<Steps>
+  <Step title="Admin creates the client account">
+    An administrator navigates to **Users → New User**, enters the customer's name and email, sets a password, and assigns the **Cliente** role. Only administrators can perform this step.
+  </Step>
+  <Step title="Client receives credentials">
+    The administrator shares the login credentials with the customer out of band (email, phone, etc.).
+  </Step>
+  <Step title="Client logs in">
+    The customer navigates to the Halcon login page and signs in with their credentials. After authentication, the application detects the **Cliente** role and redirects to `/cliente/dashboard`.
+  </Step>
+</Steps>
+
+<Note>
+If a client tries to access any other section of the application — such as `/admin/dashboard` or `/orders` — the role middleware will block the request. Clients only have access to the client dashboard route.
+</Note>
+
+## The client dashboard
+
+After login, clients land on `/cliente/dashboard`. The dashboard is a clean, read-only view showing:
+
+- A welcome message with the client's name
+- Their active order and its current status
+- Historical orders they have previously received
+- Photographic evidence for any order in **Delivered** status
+
+## Tracking an order
+
+<Steps>
+  <Step title="Navigate to the dashboard">
+    After logging in, the client is automatically taken to `/cliente/dashboard`.
+  </Step>
+  <Step title="View your orders">
+    The dashboard lists all your current and past orders automatically, sorted from newest to oldest. No search is required — all orders linked to your account appear here.
+  </Step>
+  <Step title="Read the order status">
+    Each order card displays the current status. Use the table below to understand what each status means.
+  </Step>
+  <Step title="View delivery evidence">
+    If the order status is **Delivered**, a photo thumbnail appears below the order details. Click the thumbnail to view the full-size delivery photo uploaded by the Route team.
+  </Step>
+</Steps>
+
+## Order status meanings for customers
+
+| Database value | What it means to the customer |
+|---|---|
+| `pending` | Your order has been registered and is being prepared for dispatch. |
+| `in_route` | Your order has been dispatched and is on its way to the delivery address. |
+| `delivered` | Your order has been delivered. Photographic evidence is available below. |
+
+## Viewing photographic evidence
+
+Delivery photos become visible as soon as the Route team marks an order as **Delivered** and uploads the evidence image.
+
+The photo is displayed as a thumbnail on the order card. It is served directly from Halcon's storage:
+
+```
+/storage/evidences/<filename>
+```
+
+<Note>
+Evidence photos are only visible when the order status is `delivered`. If the Route team has not yet uploaded a photo, the image area will not appear even if the status is Delivered.
+</Note>
+
+## Viewing historical orders
+
+The client dashboard shows both the current active order and all past orders associated with the client's account. Orders are listed from newest to oldest.
+
+Historical orders display the same information as the active order — status, description, and delivery evidence — giving clients a complete record of all their previous deliveries.
+
+## What clients cannot do
+
+<Note>
+The client role is strictly read-only. Clients cannot create, edit, update the status of, or delete any order.
+</Note>
+
+Specifically, clients have no access to:
+
+- The order creation form
+- Status update controls
+- The evidence upload input
+- User management pages
+- Any other department dashboard (`/admin`, `/ventas`, `/almacen`, `/ruta`, `/compras`)
+
+All of these routes are protected by role middleware. Attempting to access them while authenticated as a **Cliente** will result in an authorization error.

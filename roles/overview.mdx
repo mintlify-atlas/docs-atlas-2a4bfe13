@@ -1,0 +1,123 @@
+---
+title: "Roles overview"
+description: "Understand the six role-based access levels in Halcon and how permissions are enforced."
+---
+
+Halcon uses a role-based access control (RBAC) system to restrict what each user can see and do. Every authenticated user must have at least one role assigned. The role determines which dashboard they land on after login and which routes and resources they can access.
+
+## The six roles
+
+| Role | Spanish name | Dashboard URL | Purpose |
+|------|--------------|---------------|---------|
+| Admin | Administrador | `/admin/dashboard` | Full platform access, user and role management |
+| Ventas | Sales | `/ventas/dashboard` | Register new customer orders |
+| Compras | Purchasing | `/compras/dashboard` | Manage acquisition of external materials |
+| Almacen | Warehouse | `/almacen/dashboard` | Prepare orders and manage stock |
+| Ruta | Route/Distribution | `/ruta/dashboard` | Dispatch orders and upload photographic evidence |
+| Cliente | Customer | `/cliente/dashboard` | Track their own orders and view delivery evidence |
+
+## How roles are stored
+
+Roles are stored in the `roles` table with a single `nombreRol` column that holds the role name (for example, `Admin`, `Ventas`). The relationship between users and roles is many-to-many, managed through the `role_user` pivot table.
+
+```php app/Models/User.php
+public function roles()
+{
+    return $this->belongsToMany(Role::class, 'role_user');
+}
+```
+
+```php database/migrations — role_user table
+Schema::create('role_user', function (Blueprint $table) {
+    $table->id();
+    $table->foreignId('role_id')->constrained()->onDelete('cascade');
+    $table->foreignId('user_id')->constrained()->onDelete('cascade');
+    $table->timestamps();
+});
+```
+
+A user can technically hold multiple roles, but in normal operation each user is assigned exactly one departmental role. Only the Admin role is responsible for creating users and assigning their roles — no other role has access to the `users` or `roles` resources.
+
+## Checking roles in code
+
+The `User` model exposes a `hasRole()` method that queries the pivot table by the `nombreRol` column:
+
+```php app/Models/User.php
+public function hasRole($roleName)
+{
+    return $this->roles()->where('nombreRol', $roleName)->exists();
+}
+```
+
+This method is used throughout the application — in route redirects, Blade views, and middleware — to conditionally display content or grant access.
+
+## Route-level enforcement with middleware
+
+All protected routes use the `auth` middleware alongside the custom `role` middleware (`EnsureUserRole`). The middleware checks whether the authenticated user holds one of the permitted roles and redirects them to `/` with an error message if they do not.
+
+```php app/Http/Middleware/EnsureUserRole.php
+public function handle(Request $request, Closure $next, ...$roles): Response
+{
+    if (empty($roles)) {
+        return $next($request);
+    }
+
+    if (!$request->user()) {
+        return redirect('/login');
+    }
+
+    foreach ($roles as $role) {
+        if ($request->user()->roles->contains('nombreRol', $role)) {
+            return $next($request);
+        }
+    }
+
+    return redirect('/')->with('error', 'Acceso Denegado: No tienes permiso para acceder a esta página.');
+}
+```
+
+To protect a route for a single role, pass the role name as a middleware argument:
+
+```php routes/web.php
+Route::middleware(['auth', 'role:Admin'])->group(function () {
+    Route::get('/admin/dashboard', [AdminController::class, 'dashboard'])->name('admin.dashboard');
+});
+```
+
+To allow multiple roles to access the same resource, separate role names with a pipe character:
+
+```php routes/web.php
+Route::middleware(['auth', 'role:Admin|Almacen'])->group(function () {
+    Route::resource('materials', MaterialController::class);
+});
+```
+
+The pipe syntax means "either role is sufficient." The middleware iterates through the allowed roles and grants access as soon as one matches.
+
+## Post-login redirect
+
+After a successful login, the root route (`/`) inspects the user's role and redirects them to their role-specific dashboard automatically:
+
+```php routes/web.php
+Route::get('/', function () {
+    $user = auth()->user();
+
+    if ($user->hasRole('Admin')) {
+        return redirect()->route('admin.dashboard');
+    } elseif ($user->hasRole('Ventas')) {
+        return redirect()->route('ventas.dashboard');
+    } elseif ($user->hasRole('Compras')) {
+        return redirect()->route('compras.dashboard');
+    } elseif ($user->hasRole('Almacen')) {
+        return redirect()->route('almacen.dashboard');
+    } elseif ($user->hasRole('Ruta')) {
+        return redirect()->route('ruta.dashboard');
+    } elseif ($user->hasRole('Cliente')) {
+        return redirect()->route('cliente.dashboard');
+    }
+})->middleware('auth');
+```
+
+<Note>
+Roles are enforced at two levels: at the **route level** via the `EnsureUserRole` middleware (preventing unauthorized HTTP requests entirely), and at the **view level** via `hasRole()` checks in Blade templates (hiding UI elements the user is not allowed to use). Both layers must be consistent with each other.
+</Note>

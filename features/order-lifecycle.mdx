@@ -1,0 +1,126 @@
+---
+title: "Order lifecycle"
+description: "Manage orders from registration to delivery with full status tracking and photographic evidence."
+---
+
+Every order in Halcon moves through a four-stage pipeline. Each stage is owned by a specific department, ensuring accountability and a clean audit trail from first contact to final delivery.
+
+## Order statuses
+
+The `orders` table stores status as an enum with exactly three values:
+
+| Database value | Meaning |
+|---|---|
+| `pending` | Order registered by Sales. Awaiting warehouse preparation and dispatch. |
+| `in_route` | Order dispatched by the Route team. In transit to the customer. |
+| `delivered` | Order delivered. Photographic evidence may be attached. |
+
+<Note>
+There is no separate "In Process" database status. The `pending` state covers everything from initial registration through warehouse preparation. Teams may refer to it verbally as "In Process" while materials are being prepared, but the stored value remains `pending`.
+</Note>
+
+## Full order workflow
+
+<Steps>
+  <Step title="Sales creates the order">
+    A user with the **Ventas** (Sales) role opens the new order form and fills in the required fields:
+
+    - **Description** — what is being delivered and any relevant notes
+
+    On submission, the order is saved with status `pending` and immediately appears in the order list, sorted newest first.
+  </Step>
+  <Step title="Warehouse prepares materials">
+    A user with the **Almacén** (Warehouse) role reviews pending orders. They coordinate material preparation and report any shortages. The order stays in `pending` status during this stage.
+  </Step>
+  <Step title="Route dispatches and uploads evidence">
+    A user with the **Ruta** (Route) role:
+
+    1. Opens the order in the order list.
+    2. Changes the status to **In Route** (`in_route`).
+    3. Optionally uploads a loading photo using the file input.
+    4. On delivery, changes the status to **Delivered** (`delivered`).
+    5. Uploads the delivery photo as final evidence.
+
+    The photo is saved to `storage/app/public/evidences` and its path is stored in the `evidence_path` column.
+  </Step>
+  <Step title="Client views delivery confirmation">
+    Once status is `delivered`, the client can log in to the client portal and see the photographic evidence attached to their order. They cannot modify the order.
+  </Step>
+</Steps>
+
+## Creating a new order
+
+Navigate to **Orders → New Order**. The form requires the following fields:
+
+| Field | Required | Description |
+|---|---|---|
+| Description | Yes | Free-text description of the order contents |
+
+The `description` field is validated server-side (`required`). The `Order` model's `$fillable` array accepts `description`, `status`, and `evidence_path`. Status defaults to `pending` on creation.
+
+## Uploading photographic evidence
+
+The Route role is the only department that uploads evidence photos. Photos are accepted at any status update — typically at `in_route` (loading photo) and `delivered` (delivery confirmation photo).
+
+```php
+// OrderController.php — update method
+if ($request->hasFile('evidence')) {
+    // Delete the previous photo to avoid filling disk storage
+    if ($order->evidence_path) {
+        Storage::disk('public')->delete($order->evidence_path);
+    }
+
+    // Store the new photo under storage/app/public/evidences
+    $path = $request->file('evidence')->store('evidences', 'public');
+    $order->evidence_path = $path;
+}
+```
+
+<Note>
+Uploading a new photo automatically deletes the previous one. Only one evidence photo is stored per order at any given time.
+</Note>
+
+The uploaded photo is displayed in the order list once `evidence_path` is set:
+
+```blade
+{{-- orders/index.blade.php --}}
+@if($order->evidence_path)
+    <img src="{{ asset('storage/' . $order->evidence_path) }}" width="200">
+@endif
+```
+
+## Searching orders
+
+Use the search bar on the orders list to filter by:
+
+- **Description** — partial or exact match on the order description
+- **Date** — filter by creation date
+- **Status** — filter to `pending`, `in_route`, or `delivered`
+
+Results are always sorted newest first, enforced by the global scope on the `Order` model (`ORDER BY created_at DESC`).
+
+## Deleting an order
+
+Deleting an order permanently removes it from the database. The `OrderController::destroy()` method calls `$order->delete()`, which is a hard delete — there is no `deleted_at` field or restore functionality.
+
+<Warning>
+Order deletion is permanent. The `Order` model does not use Laravel's `SoftDeletes` trait. Once deleted, an order cannot be recovered. Confirm before deleting any order in production.
+</Warning>
+
+To delete an order, open the order in the order list and click **Delete**. The order is immediately and permanently removed.
+
+## Evidence storage path
+
+Photos are stored on the `public` disk under the `evidences/` prefix:
+
+```
+storage/app/public/evidences/<generated-filename>.jpg
+```
+
+The public URL resolves via Laravel's `asset()` helper:
+
+```
+/storage/evidences/<generated-filename>.jpg
+```
+
+The `evidence_path` column on the `orders` table holds the relative path returned by `store()` — for example, `evidences/AbCdEfGh.jpg`. This value is passed directly to `asset('storage/' . $order->evidence_path)` in the view.

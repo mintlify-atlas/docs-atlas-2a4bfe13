@@ -1,0 +1,229 @@
+---
+title: "Database schema"
+description: "Understand the Halcon data model: tables, columns, relationships, and constraints."
+---
+
+Halcon uses a relational MySQL database managed through Laravel migrations. This page documents every table, its columns, and how the tables relate to each other.
+
+<CardGroup cols={2}>
+  <Card title="Run migrations" icon="terminal">
+    Apply all pending migrations with `php artisan migrate`.
+  </Card>
+  <Card title="Reset and reseed" icon="rotate">
+    Tear down and rebuild the schema with `php artisan migrate:fresh --seed`.
+  </Card>
+</CardGroup>
+
+## Running migrations
+
+```bash
+# Apply all pending migrations
+php artisan migrate
+
+# Drop all tables and re-run every migration, then run seeders
+php artisan migrate:fresh --seed
+```
+
+<Warning>
+  `migrate:fresh` destroys all existing data. Only use it in development or when you intentionally need a clean slate.
+</Warning>
+
+---
+
+## Tables
+
+### `users`
+
+Created by two migrations: the initial Laravel scaffold (`0001_01_01_000000`) and an additional fields migration (`2026_04_06_234220_add_fields_to_users_table`).
+
+| Column               | Type        | Nullable | Default | Description                                               |
+| -------------------- | ----------- | -------- | ------- | --------------------------------------------------------- |
+| `id`                 | bigint (PK) | No       | —       | Auto-incrementing primary key.                            |
+| `name`               | string      | No       | —       | Full name of the user.                                    |
+| `email`              | string      | No       | —       | Unique email address used for login.                      |
+| `role_or_department` | string      | Yes      | `null`  | Free-text label for the user's department or role.        |
+| `is_active`          | boolean     | No       | `true`  | Whether the user account is active.                       |
+| `email_verified_at`  | timestamp   | Yes      | `null`  | When the email address was verified.                      |
+| `password`           | string      | No       | —       | Hashed password (bcrypt).                                 |
+| `remember_token`     | string      | Yes      | `null`  | Token for the "remember me" cookie.                       |
+| `created_at`         | timestamp   | Yes      | `null`  | Record creation timestamp (managed by Laravel).           |
+| `updated_at`         | timestamp   | Yes      | `null`  | Record last-update timestamp (managed by Laravel).        |
+
+<Note>
+  `email` has a `UNIQUE` constraint. Attempting to register two users with the same email will throw a validation error.
+</Note>
+
+---
+
+### `roles`
+
+| Column      | Type        | Nullable | Default | Description                                    |
+| ----------- | ----------- | -------- | ------- | ---------------------------------------------- |
+| `id`        | bigint (PK) | No       | —       | Auto-incrementing primary key.                 |
+| `nombreRol` | string(50)  | No       | —       | Unique name of the role (e.g., `Admin`).       |
+| `created_at`| timestamp   | Yes      | `null`  | Record creation timestamp.                     |
+| `updated_at`| timestamp   | Yes      | `null`  | Record last-update timestamp.                  |
+
+<Note>
+  `nombreRol` has a `UNIQUE` constraint — duplicate role names are not allowed.
+</Note>
+
+---
+
+### `role_user`
+
+Pivot table that implements the many-to-many relationship between users and roles. A single user can hold multiple roles, and a role can be assigned to multiple users.
+
+| Column      | Type        | Nullable | Default | Description                                            |
+| ----------- | ----------- | -------- | ------- | ------------------------------------------------------ |
+| `id`        | bigint (PK) | No       | —       | Auto-incrementing primary key.                         |
+| `role_id`   | bigint (FK) | No       | —       | References `roles.id`. Cascades on delete.             |
+| `user_id`   | bigint (FK) | No       | —       | References `users.id`. Cascades on delete.             |
+| `created_at`| timestamp   | Yes      | `null`  | Record creation timestamp.                             |
+| `updated_at`| timestamp   | Yes      | `null`  | Record last-update timestamp.                          |
+
+<Note>
+  Both foreign keys use `ON DELETE CASCADE`. Deleting a user or a role automatically removes the corresponding pivot rows.
+</Note>
+
+---
+
+### `orders`
+
+| Column          | Type        | Nullable | Default   | Description                                                        |
+| --------------- | ----------- | -------- | --------- | ------------------------------------------------------------------ |
+| `id`            | bigint (PK) | No       | —         | Auto-incrementing primary key.                                     |
+| `description`   | string      | No       | —         | Human-readable description of the order.                           |
+| `status`        | enum        | No       | `pending` | Current lifecycle stage of the order. See status values below.     |
+| `evidence_path` | string      | Yes      | `null`    | Filesystem path to the delivery photo uploaded by the Route team.  |
+| `created_at`    | timestamp   | Yes      | `null`    | Order creation timestamp. Used to sort orders newest-first.        |
+| `updated_at`    | timestamp   | Yes      | `null`    | Record last-update timestamp.                                      |
+
+**Status enum values**
+
+| Value       | Meaning                                                      |
+| ----------- | ------------------------------------------------------------ |
+| `pending`   | Order has been registered and is awaiting processing.        |
+| `in_route`  | Order has been dispatched and is on its way to the customer. |
+| `delivered` | Order has been delivered. Evidence photo may be attached.    |
+
+<Note>
+  The `Order` model applies a global scope that always sorts results by `created_at DESC`, so the most recently created orders appear first in every query.
+</Note>
+
+<Note>
+  `evidence_path` stores the relative path to the uploaded file on disk, not a URL. The application resolves the full path at display time using Laravel's storage helpers.
+</Note>
+
+---
+
+### `materials`
+
+| Column                | Type        | Nullable | Default | Description                                      |
+| --------------------- | ----------- | -------- | ------- | ------------------------------------------------ |
+| `id`                  | bigint (PK) | No       | —       | Auto-incrementing primary key.                   |
+| `clave_material`      | integer     | No       | —       | Unique internal key identifying the material.    |
+| `descripcion_material`| text        | No       | —       | Full description of the material.                |
+| `precio_unitario`     | integer     | No       | —       | Unit price in whole currency units.              |
+| `cantidad_material`   | integer     | No       | —       | Total quantity of this material in the system.   |
+| `created_at`          | timestamp   | Yes      | `null`  | Record creation timestamp.                       |
+| `updated_at`          | timestamp   | Yes      | `null`  | Record last-update timestamp.                    |
+
+<Note>
+  `clave_material` has a `UNIQUE` constraint. Each material must have a distinct internal key.
+</Note>
+
+---
+
+### `stockAlmacenes`
+
+Tracks per-material stock levels in the warehouse. Each row represents the stock state for one material.
+
+| Column        | Type        | Nullable | Default | Description                                                             |
+| ------------- | ----------- | -------- | ------- | ----------------------------------------------------------------------- |
+| `id`          | bigint (PK) | No       | —       | Auto-incrementing primary key.                                          |
+| `material_Id` | bigint (FK) | No       | —       | References `materials.id`. Cascades on delete. Accessed as `materialesId` in the `StockAlmacen` model's `$fillable` and relationships. |
+| `cantidadStock` | integer   | No       | —       | Current quantity of the material in the warehouse.                      |
+| `stockMinimo` | integer     | No       | —       | Minimum threshold. When stock falls below this, a shortage can be flagged. |
+| `stockMaximo` | integer     | No       | —       | Maximum capacity. Prevents over-ordering.                               |
+| `created_at`  | timestamp   | Yes      | `null`  | Record creation timestamp.                                              |
+| `updated_at`  | timestamp   | Yes      | `null`  | Record last-update timestamp (reflects latest stock adjustment).        |
+
+<Note>
+  `material_Id` uses `ON DELETE CASCADE`. Deleting a material record also deletes its corresponding stock entry.
+</Note>
+
+---
+
+### `providers`
+
+| Column             | Type        | Nullable | Default | Description                                              |
+| ------------------ | ----------- | -------- | ------- | -------------------------------------------------------- |
+| `id`               | int (PK)    | No       | —       | Auto-incrementing primary key.                           |
+| `nombre_proveedor` | string      | No       | —       | Full name of the supplier company or individual.         |
+| `telefono`         | string      | No       | —       | Contact phone number.                                    |
+| `correo`           | string      | No       | —       | Unique contact email address.                            |
+| `activo`           | boolean     | No       | `true`  | Whether the provider is currently active.                |
+| `created_at`       | timestamp   | Yes      | `null`  | Record creation timestamp.                               |
+| `updated_at`       | timestamp   | Yes      | `null`  | Record last-update timestamp.                            |
+
+<Note>
+  `correo` has a `UNIQUE` constraint. No two providers can share the same email address.
+</Note>
+
+---
+
+## Relationships
+
+### Users and roles (many-to-many)
+
+Users and roles are linked through the `role_user` pivot table. This means a user can hold multiple roles simultaneously, and the same role can be assigned to any number of users.
+
+```php
+// Role model — a role belongs to many users
+public function users()
+{
+    return $this->belongsToMany(User::class, 'role_user');
+}
+```
+
+### Stock and materials (many-to-one)
+
+Each `stockAlmacenes` row belongs to exactly one material. The `StockAlmacen` model declares this explicitly, using `materialesId` as the local key (which maps to the `material_Id` migration column via the model's `$fillable`):
+
+```php
+// app/Models/StockAlmacen.php
+public function material(): BelongsTo
+{
+    return $this->belongsTo(Material::class, 'materialesId');
+}
+```
+
+When loading stock records, the controller uses eager loading to avoid N+1 queries:
+
+```php
+$stocks = StockAlmacen::with('material')->paginate(10);
+```
+
+---
+
+## Soft deletes
+
+Neither the `Material`, `Order`, `Provider`, nor `StockAlmacen` models use Laravel's `SoftDeletes` trait. Calling `->delete()` on any of these records performs a **hard delete** — the row is permanently removed from the database.
+
+<Warning>
+  There is no built-in restore functionality for materials, orders, providers, or stock records. Confirm before deleting any record in production.
+</Warning>
+
+---
+
+## Supporting tables
+
+These tables are created by the default Laravel scaffold and support framework infrastructure. You do not need to manage them directly.
+
+| Table                   | Purpose                                                    |
+| ----------------------- | ---------------------------------------------------------- |
+| `password_reset_tokens` | Stores tokens for the password reset flow.                 |
+| `sessions`              | Persists database-backed user sessions.                    |
+| `cache`                 | Laravel cache storage (when using the database driver).    |
+| `jobs`                  | Laravel queue job storage.                                 |

@@ -1,0 +1,163 @@
+---
+title: "Materials & inventory"
+description: "Manage construction material records and warehouse stock levels in Halcon."
+---
+
+Halcon tracks construction materials in two layers: the **materials catalog** (what a material is and its unit price) and **warehouse stock** (how much of it you have, and the safe operating range). Both are managed through dedicated resource routes and controllers.
+
+<CardGroup cols={2}>
+  <Card title="Materials catalog" icon="boxes-stacked">
+    Create and maintain the list of materials available in your system, including descriptions, keys, and unit prices.
+  </Card>
+  <Card title="Warehouse stock" icon="warehouse">
+    Track current quantities per material and set minimum and maximum thresholds to prevent shortages or overstock.
+  </Card>
+</CardGroup>
+
+---
+
+## Who can manage materials and stock
+
+| Role      | Materials | Warehouse stock |
+| --------- | --------- | --------------- |
+| Admin     | Full CRUD | Full CRUD       |
+| Almacen   | Full CRUD | Full CRUD       |
+| All others| Read-only | Read-only       |
+
+<Note>
+  Only users with the **Admin** or **Almacen** (Warehouse) role can create, edit, or delete material and stock records. Other roles may view the data but cannot make changes.
+</Note>
+
+---
+
+## The `materials` table
+
+Each row in `materials` represents a distinct construction material in your catalog.
+
+| Column                 | Type    | Constraints    | Description                                              |
+| ---------------------- | ------- | -------------- | -------------------------------------------------------- |
+| `id`                   | bigint  | PK             | Auto-incrementing primary key.                           |
+| `clave_material`       | integer | Unique, not null | Internal key that uniquely identifies the material.    |
+| `descripcion_material` | text    | Not null       | Full description of the material.                        |
+| `precio_unitario`      | integer | Not null, ≥ 0  | Unit price in whole currency units.                      |
+| `cantidad_material`    | integer | Not null, ≥ 0  | Total quantity of the material tracked in the system.    |
+| `created_at`           | timestamp | Nullable     | Record creation timestamp (managed by Laravel).          |
+| `updated_at`           | timestamp | Nullable     | Record last-update timestamp (managed by Laravel).       |
+
+<Note>
+  `clave_material` must be unique across all materials. The controller enforces this with a `unique:materials` validation rule on create and `unique:materials,clave_material,{id}` on update to allow editing a material without triggering a self-collision error.
+</Note>
+
+### Validation rules
+
+When creating or updating a material, the following rules are applied:
+
+```php
+'clave_material'       => 'required|integer|unique:materials'
+'descripcion_material' => 'required|string'
+'precio_unitario'      => 'required|integer|min:0'
+'cantidad_material'    => 'required|integer|min:0'
+```
+
+---
+
+## The `stockAlmacenes` table
+
+Each row in `stockAlmacenes` represents the warehouse stock state for one material. A material must exist in the `materials` table before a stock record can be created for it.
+
+| Column          | Type    | Constraints           | Description                                                                  |
+| --------------- | ------- | --------------------- | ---------------------------------------------------------------------------- |
+| `id`            | bigint  | PK                    | Auto-incrementing primary key.                                               |
+| `material_Id`   | bigint  | FK → `materials.id`   | The material this stock entry belongs to. Cascades on delete.                |
+| `cantidadStock` | integer | Not null, ≥ 0         | Current quantity of the material in the warehouse.                           |
+| `stockMinimo`   | integer | Not null, ≥ 0         | Minimum safe quantity. When stock falls below this, a shortage should be flagged. |
+| `stockMaximo`   | integer | Not null, ≥ 0         | Maximum capacity. Prevents over-ordering.                                    |
+| `created_at`    | timestamp | Nullable            | Record creation timestamp.                                                   |
+| `updated_at`    | timestamp | Nullable            | Reflects the last time this stock entry was updated.                         |
+
+### Validation rules
+
+```php
+'materialesId'  => 'required|exists:materials,id'
+'cantidadStock' => 'required|integer|min:0'
+'stockMinimo'   => 'required|integer|min:0'
+'stockMaximo'   => 'required|integer|min:0'
+```
+
+### Relationship to materials
+
+The `StockAlmacen` model declares a `belongsTo` relationship so you can access the parent material directly from any stock record:
+
+```php
+$stock = StockAlmacen::with('material')->find($id);
+
+echo $stock->material->descripcion_material;
+echo $stock->material->precio_unitario;
+```
+
+---
+
+## CRUD operations
+
+### Materials — `/materials`
+
+The `MaterialController` handles all material operations via Laravel resource routing.
+
+| Action  | Method | Route              | Description                      |
+| ------- | ------ | ------------------ | -------------------------------- |
+| List    | GET    | `/materials`       | Paginated list (10 per page).    |
+| Create  | GET    | `/materials/create`| Show creation form.              |
+| Store   | POST   | `/materials`       | Validate and persist new record. |
+| Edit    | GET    | `/materials/{id}/edit` | Show edit form.             |
+| Update  | PUT    | `/materials/{id}`  | Validate and save changes.       |
+| Delete  | DELETE | `/materials/{id}`  | Permanently delete the record.   |
+
+<Warning>
+  Deleting a material is a hard delete — there is no soft delete or restore. If a `stockAlmacenes` row references this material, it will also be deleted due to the `ON DELETE CASCADE` constraint on `material_Id`.
+</Warning>
+
+### Warehouse stock — `/stockAlmacenes`
+
+The `StockAlmacenController` mirrors the same resource structure.
+
+| Action  | Method | Route                      | Description                                          |
+| ------- | ------ | -------------------------- | ---------------------------------------------------- |
+| List    | GET    | `/stockAlmacenes`          | Paginated list with eager-loaded material names.     |
+| Create  | GET    | `/stockAlmacenes/create`   | Form pre-loaded with all available materials.        |
+| Store   | POST   | `/stockAlmacenes`          | Validate and create the stock record.                |
+| Edit    | GET    | `/stockAlmacenes/{id}/edit`| Form pre-loaded with current values and materials.   |
+| Update  | PUT    | `/stockAlmacenes/{id}`     | Validate and update the stock entry.                 |
+| Delete  | DELETE | `/stockAlmacenes/{id}`     | Permanently delete the stock entry.                  |
+
+---
+
+## How warehouse staff uses stock data
+
+Warehouse (Almacen) staff rely on the stock list daily to:
+
+1. Check `cantidadStock` against `stockMinimo` to identify materials running low before preparing orders.
+2. Update `cantidadStock` after receiving a delivery from Purchasing.
+3. Report shortages to the Purchasing department when `cantidadStock` drops below `stockMinimo`.
+4. Confirm that `cantidadStock` does not exceed `stockMaximo` to avoid overstock situations.
+
+The stock list view loads material names via eager loading (`StockAlmacen::with('material')`), so each row displays a readable description alongside the quantity figures.
+
+---
+
+## Best practices
+
+<Tip>
+  Set `stockMinimo` based on how long it takes your Purchasing team to acquire more of a material. A buffer of at least one typical order cycle prevents production delays.
+</Tip>
+
+<Tip>
+  Keep `clave_material` in sync with your external purchasing system or invoice numbering. Using the same key across systems avoids reconciliation errors.
+</Tip>
+
+<Tip>
+  Review material descriptions regularly. Vague entries like "material A" make it difficult for warehouse staff to pick the right item. Use specific descriptions that match how the material appears on supplier invoices.
+</Tip>
+
+<Tip>
+  Avoid setting `stockMaximo` too high. Overstock ties up capital and storage space. Set it based on realistic maximum demand over your replenishment cycle.
+</Tip>

@@ -1,0 +1,126 @@
+---
+title: "Providers"
+description: "Manage external suppliers and material providers used by the Purchasing department."
+---
+
+Providers (proveedores) are the external suppliers your Purchasing team contacts when acquiring materials for customer orders. Halcon maintains a central provider directory so the Compras (Purchasing) department always has up-to-date contact information at hand.
+
+---
+
+## Who can manage providers
+
+| Role    | Providers     |
+| ------- | ------------- |
+| Admin   | Full CRUD     |
+| Compras | Full CRUD     |
+| All others | Read-only  |
+
+<Note>
+  Only users with the **Admin** or **Compras** (Purchasing) role can create, edit, or delete provider records. Other roles can view the list but cannot make changes.
+</Note>
+
+---
+
+## The `providers` table
+
+| Column             | Type    | Constraints       | Description                                              |
+| ------------------ | ------- | ----------------- | -------------------------------------------------------- |
+| `id`               | int     | PK                | Auto-incrementing primary key.                           |
+| `nombre_proveedor` | string  | Not null, max 255 | Full name of the supplier company or contact person.     |
+| `telefono`         | string  | Not null          | Contact phone number.                                    |
+| `correo`           | string  | Unique, not null  | Contact email address. Must be unique across all providers. |
+| `activo`           | boolean | Not null          | `true` if the provider is currently active; `false` if deactivated. Default: `true`. |
+| `created_at`       | timestamp | Nullable        | Record creation timestamp (managed by Laravel).          |
+| `updated_at`       | timestamp | Nullable        | Record last-update timestamp (managed by Laravel).       |
+
+<Note>
+  `correo` has a `UNIQUE` constraint. No two providers can share the same email address.
+</Note>
+
+### Validation rules
+
+The `ProviderController` enforces the following rules on create and update:
+
+```php
+'nombre_proveedor' => 'required|string|max:255'
+'telefono'         => 'required|string'
+'correo'           => 'required|string|max:255|unique:providers'
+'activo'           => 'required|boolean'
+```
+
+---
+
+## CRUD operations via `/providers`
+
+The `ProviderController` exposes the full Laravel resource route set.
+
+| Action | Method | Route                  | Description                          |
+| ------ | ------ | ---------------------- | ------------------------------------ |
+| List   | GET    | `/providers`           | Paginated list of providers (10 per page). |
+| Create | GET    | `/providers/create`    | Show the new provider form.          |
+| Store  | POST   | `/providers`           | Validate and persist the new record. |
+| Edit   | GET    | `/providers/{id}/edit` | Show the edit form pre-filled with existing data. |
+| Update | PUT    | `/providers/{id}`      | Validate and save changes.           |
+| Delete | DELETE | `/providers/{id}`      | Permanently delete the provider.     |
+
+<Warning>
+  Deleting a provider is a hard delete — the record is permanently removed. Consider setting `activo` to `false` instead if you want to retain the supplier's contact history.
+</Warning>
+
+---
+
+## Adding a new provider
+
+<Steps>
+  <Step title="Open the provider list">
+    Navigate to **Providers** in the sidebar or go to `/providers`. Click **New provider**.
+  </Step>
+  <Step title="Fill in the provider details">
+    Enter the supplier's name in **Nombre proveedor**, their phone number in **Teléfono**, and their email in **Correo**. The email must be unique — the form will reject a duplicate address.
+  </Step>
+  <Step title="Set the active status">
+    Leave **Activo** checked (the default) for a provider you are currently working with. Uncheck it to create an inactive record.
+  </Step>
+  <Step title="Save the record">
+    Click **Guardar**. You will be redirected back to the provider list with a confirmation message.
+  </Step>
+</Steps>
+
+---
+
+## Editing a provider record
+
+Navigate to `/providers/{id}/edit` or click **Edit** next to the provider in the list. All fields are pre-filled with the current values. Update as needed and click **Guardar**.
+
+<Note>
+  When updating `correo`, the uniqueness check excludes the current provider's own record, so you can save without changing the email without triggering a validation error.
+</Note>
+
+---
+
+## Deactivating a provider
+
+Rather than deleting a provider you no longer use, set `activo` to `false`. This preserves the supplier's contact history and lets you reactivate them later without re-entering their details.
+
+To deactivate a provider:
+
+1. Open the edit form for the provider at `/providers/{id}/edit`.
+2. Uncheck the **Activo** field.
+3. Click **Guardar**.
+
+The provider remains in the database and continues to appear in the list. Filter by `activo = false` to see your inactive supplier archive.
+
+---
+
+## Providers in the purchasing workflow
+
+The Compras department consults provider records at the point when an order requires external materials:
+
+1. An order arrives that requires materials not currently in stock (or below `stockMinimo`).
+2. The Purchasing team opens the provider list and identifies the appropriate supplier for the needed materials.
+3. They contact the supplier via the phone number or email stored in the provider record.
+4. Once the materials are acquired, the Warehouse team updates the `cantidadStock` for the relevant materials in `stockAlmacenes`.
+
+<Tip>
+  Add a note or distinguishing detail to `nombre_proveedor` when two suppliers have similar names — for example, "Cementos García (Norte)" vs "Cementos García (Sur)". This avoids confusion when Purchasing staff search the list under time pressure.
+</Tip>

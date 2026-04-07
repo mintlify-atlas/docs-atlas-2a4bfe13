@@ -1,0 +1,124 @@
+---
+title: "Admin role"
+description: "Full platform access — user registration, role management, and complete order oversight."
+---
+
+The Admin role has unrestricted access to every resource and every action in the Halcon platform. It is the only role that can create other users and assign them roles, making it the entry point for onboarding all other platform members.
+
+**Dashboard:** `/admin/dashboard`
+
+<Warning>
+The Admin account has no permission restrictions. Anyone with Admin credentials can create, edit, delete, and restore any record in the system — including other admin accounts. Keep Admin credentials secure and limit the number of users with this role.
+</Warning>
+
+## Capabilities
+
+<CardGroup cols={2}>
+  <Card title="User management" icon="users">
+    Create new users with name, email, and password. Edit or delete existing users. Admins cannot delete their own account.
+  </Card>
+  <Card title="Role management" icon="shield">
+    Create new roles, edit existing role names, and assign roles to users. Role names must match the exact strings used in route middleware.
+  </Card>
+  <Card title="Order oversight" icon="clipboard-list">
+    View all orders across all departments. Edit order details and delete orders permanently.
+  </Card>
+  <Card title="Materials management" icon="box">
+    Full CRUD access to the `materials` resource, shared with the Almacen role. Create, view, update, and delete construction material records.
+  </Card>
+  <Card title="Warehouse stock" icon="warehouse">
+    Full CRUD access to `stockAlmacenes`, shared with the Almacen role. Manage current stock levels in the warehouse.
+  </Card>
+  <Card title="Provider management" icon="truck">
+    Full CRUD access to `providers`, shared with the Compras role. Add, update, and remove external material suppliers.
+  </Card>
+</CardGroup>
+
+## Routes accessible to Admin
+
+The Admin role is the only role granted access to both the `users` and `roles` resource routes. It also shares access to other resources with the relevant departmental roles.
+
+```php routes/web.php
+// Admin-only: users and roles management
+Route::middleware(['auth', 'role:Admin'])->group(function () {
+    Route::resource('users', UserController::class);
+    Route::resource('roles', RoleController::class);
+});
+
+// Shared with Almacen
+Route::middleware(['auth', 'role:Admin|Almacen'])->group(function () {
+    Route::resource('materials', MaterialController::class);
+    Route::resource('stockAlmacenes', StockAlmacenController::class);
+});
+
+// Shared with Compras
+Route::middleware(['auth', 'role:Admin|Compras'])->group(function () {
+    Route::resource('providers', ProviderController::class);
+});
+```
+
+## User management details
+
+The `UserController` enforces the following validation rules when creating or updating users:
+
+| Field | Rules |
+|-------|-------|
+| `name` | Required, string, max 255 characters |
+| `email` | Required, valid email, unique in `users` table |
+| `password` | Required on create (min 8 chars, confirmed); optional on update |
+
+An admin cannot delete their own account. The `destroy` action checks `auth()->id() === $user->id` and redirects with an error if the condition is true.
+
+```php app/Http/Controllers/UserController.php
+public function destroy(User $user)
+{
+    if (auth()->id() === $user->id) {
+        return redirect()->route('users.index')
+            ->with('error', 'No puedes eliminarte a ti mismo.');
+    }
+
+    $user->delete();
+    return redirect()->route('users.index')
+        ->with('success', 'Usuario eliminado correctamente.');
+}
+```
+
+## Creating the first admin user
+
+Because only an Admin can create other users, you need to seed the initial admin account before the application can be used. You can do this through an Artisan tinker session or a database seeder.
+
+<Steps>
+  <Step title="Open an Artisan tinker session">
+    ```bash
+    php artisan tinker
+    ```
+  </Step>
+  <Step title="Create the admin user">
+    ```php
+    $user = \App\Models\User::create([
+        'name'     => 'Admin',
+        'email'    => 'admin@halcon.com',
+        'password' => bcrypt('your-secure-password'),
+    ]);
+    ```
+  </Step>
+  <Step title="Ensure the Admin role exists">
+    ```php
+    $role = \App\Models\Role::firstOrCreate(['nombreRol' => 'Admin']);
+    ```
+  </Step>
+  <Step title="Attach the role to the user">
+    ```php
+    $user->roles()->attach($role->id);
+    ```
+  </Step>
+  <Step title="Verify the assignment">
+    ```php
+    $user->hasRole('Admin'); // returns true
+    ```
+  </Step>
+</Steps>
+
+<Tip>
+After the first admin user is created, all subsequent user registration and role assignment can be done through the admin dashboard UI at `/users` and `/roles`.
+</Tip>

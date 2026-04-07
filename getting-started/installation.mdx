@@ -1,0 +1,144 @@
+---
+title: "Installation"
+description: "Set up Halcon on your server with PHP, Composer, and Node.js."
+---
+
+## Prerequisites
+
+Before installing Halcon, make sure your environment meets the following requirements:
+
+- **PHP 8.2 or higher** with the extensions required by Laravel (OpenSSL, PDO, Mbstring, Tokenizer, XML, Ctype, JSON)
+- **Composer** — PHP dependency manager
+- **Node.js 18+ and npm** — for compiling front-end assets
+- **A database** — SQLite (zero-config, good for development) or MySQL 8+ (recommended for production)
+
+<Note>
+  Halcon is built on Laravel 12. If you are unfamiliar with Laravel's server
+  requirements, see the [official Laravel documentation](https://laravel.com/docs/12.x/deployment#server-requirements).
+</Note>
+
+---
+
+## Quick setup
+
+If you want to run a single command that handles everything, use the `composer setup` script after cloning the repository. It installs PHP and Node dependencies, generates the application key, runs migrations, and compiles assets in one step.
+
+```bash
+composer setup
+```
+
+To seed the database with default roles after setup, run:
+
+```bash
+php artisan db:seed
+```
+
+Then start the development server:
+
+```bash
+composer dev
+```
+
+If you prefer to run each step manually, follow the guide below.
+
+---
+
+## Manual installation
+
+<Steps>
+  <Step title="Clone the repository">
+    Clone the Halcon source code to your local machine or server.
+
+    ```bash
+    git clone https://github.com/Yurben-bit/Aplicaci-n-web-Halcon-.git halcon
+    cd halcon
+    ```
+  </Step>
+
+  <Step title="Install PHP dependencies">
+    Install all Laravel packages defined in `composer.json`.
+
+    ```bash
+    composer install
+    ```
+  </Step>
+
+  <Step title="Create the environment file">
+    Copy the example environment file and generate a unique application key. The key is used to encrypt session data and other sensitive values — do not skip this step.
+
+    ```bash
+    cp .env.example .env
+    php artisan key:generate
+    ```
+
+    <Warning>
+      Never commit your `.env` file to version control. It contains secrets such
+      as the `APP_KEY` and your database credentials.
+    </Warning>
+  </Step>
+
+  <Step title="Configure your database">
+    Open `.env` and set the database connection. For a quick local setup, SQLite requires no additional server. For production, use MySQL.
+
+    See the [Configuration](/getting-started/configuration) page for full details on database options.
+  </Step>
+
+  <Step title="Run database migrations">
+    Create all required tables in the database.
+
+    ```bash
+    php artisan migrate
+    ```
+  </Step>
+
+  <Step title="Seed the database">
+    The `db:seed` command creates the six application roles (Admin, Ventas, Compras, Almacen, Ruta, Cliente) and a default test user.
+
+    ```bash
+    php artisan db:seed
+    ```
+
+    <Note>
+      The `DatabaseSeeder` creates a test user with email `test@example.com`. Update
+      or replace this user before deploying to production. Assign the **Admin** role
+      to your first administrator through the admin dashboard after logging in.
+    </Note>
+  </Step>
+
+  <Step title="Install Node.js dependencies and compile assets">
+    Install front-end packages and build the CSS and JavaScript bundles that Vite produces from `resources/sass/app.scss` and `resources/js/app.js`.
+
+    ```bash
+    npm install && npm run build
+    ```
+  </Step>
+
+  <Step title="Link public storage">
+    Halcon stores delivery photographs in the `storage` directory. Run the following command so they are publicly accessible through the web server.
+
+    ```bash
+    php artisan storage:link
+    ```
+  </Step>
+
+  <Step title="Start the development server">
+    Start the built-in PHP development server on `http://localhost:8000`.
+
+    ```bash
+    php artisan serve
+    ```
+
+    For a full development environment that also starts the queue worker, log viewer, and Vite dev server concurrently, use the `composer dev` shortcut instead. See [Configuration](/getting-started/configuration) for details.
+  </Step>
+</Steps>
+
+---
+
+## Verifying the installation
+
+Open `http://localhost:8000` in your browser. You should see the Halcon login page. Log in with the credentials from the seeder (`test@example.com`) or with any administrator account you created.
+
+<Tip>
+  After your first login, go to the admin dashboard to create real user accounts
+  and assign roles before sharing access with your team.
+</Tip>

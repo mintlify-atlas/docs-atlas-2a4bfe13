@@ -1,0 +1,177 @@
+---
+title: "Departmental roles"
+description: "Configure and understand the Sales, Purchasing, Warehouse, Route, and Client roles."
+---
+
+Five departmental roles cover each stage of Halcon's order lifecycle. Each role provides access only to the resources and actions relevant to that department. Users are redirected to their role-specific dashboard immediately after login.
+
+<Note>
+All departmental routes require the `auth` middleware in addition to the `role` middleware. A user who is not logged in is always redirected to `/login`, regardless of their role.
+</Note>
+
+## Role breakdown
+
+<AccordionGroup>
+  <Accordion title="Ventas — Sales" icon="receipt" defaultOpen={false}>
+    **Dashboard:** `/ventas/dashboard`
+
+    The Ventas role is responsible for registering new customer orders at the start of the order lifecycle. When a customer places an order, a Ventas user creates the record in the system with all required fiscal and delivery information.
+
+    **Accessible resources:** Customer orders (create and view)
+
+    **Actions:**
+    - Register a new customer order with the following data:
+      - Fiscal information (customer details for invoicing)
+      - Delivery address
+      - Invoice number (consecutivo de factura)
+      - Notes or special instructions
+    - View orders they have registered
+
+    **Route definition:**
+
+    ```php routes/web.php
+    Route::middleware(['auth', 'role:Ventas'])->group(function () {
+        Route::get('/ventas/dashboard', [VentaController::class, 'dashboard'])
+            ->name('ventas.dashboard');
+    });
+    ```
+
+    **Order state:** Orders created by Ventas begin in the `Ordered` state, meaning the order is registered and awaiting processing by other departments.
+  </Accordion>
+
+  <Accordion title="Compras — Purchasing" icon="shopping-cart" defaultOpen={false}>
+    **Dashboard:** `/compras/dashboard`
+
+    The Compras role manages the acquisition of external materials from providers when the warehouse does not have sufficient stock to fulfill an order. Compras users coordinate directly with external suppliers.
+
+    **Accessible resources:** `providers` (shared with Admin)
+
+    **Actions:**
+    - View and manage provider records (full CRUD, shared with Admin)
+    - Identify material shortages reported by the Almacen role
+    - Manage the acquisition of materials from external providers
+
+    **Route definitions:**
+
+    ```php routes/web.php
+    Route::middleware(['auth', 'role:Compras'])->group(function () {
+        Route::get('/compras/dashboard', [CompraController::class, 'dashboard'])
+            ->name('compras.dashboard');
+    });
+
+    Route::middleware(['auth', 'role:Admin|Compras'])->group(function () {
+        Route::resource('providers', ProviderController::class);
+    });
+    ```
+
+    **Order state:** After Compras acquires the missing materials, the order moves to the `In Process` state along with Almacen's preparation work.
+  </Accordion>
+
+  <Accordion title="Almacen — Warehouse" icon="warehouse" defaultOpen={false}>
+    **Dashboard:** `/almacen/dashboard`
+
+    The Almacen role handles the physical preparation of orders inside the warehouse. Almacen users pick and pack the materials for each order and report any shortages that Compras must resolve.
+
+    **Accessible resources:** `materials`, `stockAlmacenes` (both shared with Admin)
+
+    **Actions:**
+    - View and manage material records (full CRUD on `materials`)
+    - View and manage warehouse stock levels (full CRUD on `stockAlmacenes`)
+    - Prepare orders by pulling materials from current stock
+    - Report shortages to the Compras department when stock is insufficient
+
+    **Route definitions:**
+
+    ```php routes/web.php
+    Route::middleware(['auth', 'role:Almacen'])->group(function () {
+        Route::get('/almacen/dashboard', [AlmacenController::class, 'dashboard'])
+            ->name('almacen.dashboard');
+    });
+
+    Route::middleware(['auth', 'role:Admin|Almacen'])->group(function () {
+        Route::resource('materials', MaterialController::class);
+        Route::resource('stockAlmacenes', StockAlmacenController::class);
+    });
+    ```
+
+    **Order state:** When Almacen has prepared the materials (and Compras has resolved any shortages), the order moves to the `In Process` state, signaling it is ready for dispatch.
+  </Accordion>
+
+  <Accordion title="Ruta — Route/Distribution" icon="truck" defaultOpen={false}>
+    **Dashboard:** `/ruta/dashboard`
+
+    The Ruta role handles the final dispatch and delivery of orders. Ruta users mark orders as in transit and upload photographic evidence of both loading and delivery. This is the only role permitted to upload photos.
+
+    **Accessible resources:** Order dispatch actions, photo upload
+
+    **Actions:**
+    - Mark prepared orders as `In Route` (dispatched)
+    - Upload a loading photo as evidence that the order left the warehouse
+    - Upload a delivery photo as evidence that the order reached the customer
+    - View current orders assigned for distribution
+
+    **Route definition:**
+
+    ```php routes/web.php
+    Route::middleware(['auth', 'role:Ruta'])->group(function () {
+        Route::get('/ruta/dashboard', [RutaController::class, 'dashboard'])
+            ->name('ruta.dashboard');
+    });
+    ```
+
+    **Order states managed:**
+    - Sets order status to `In Route` when dispatched
+    - Order moves to `Delivered` once delivery photos are uploaded
+
+    <Tip>
+    Only the Ruta role can upload photographic evidence. This is enforced at the view level — the photo upload UI is only rendered for users whose `hasRole('Ruta')` check returns `true`.
+    </Tip>
+  </Accordion>
+
+  <Accordion title="Cliente — Customer" icon="user" defaultOpen={false}>
+    **Dashboard:** `/cliente/dashboard`
+
+    The Cliente role is assigned to end customers of Halcon. Customers can track the current status of their orders and review the history of past orders. Their access is read-only and scoped to their own orders — they cannot see orders belonging to other customers.
+
+    **Accessible resources:** Their own orders (read-only)
+
+    **Actions:**
+    - View the current status of their active order
+    - Review past orders and their final statuses
+    - View photographic delivery evidence when an order reaches the `Delivered` state
+
+    **Route definition:**
+
+    ```php routes/web.php
+    Route::middleware(['auth', 'role:Cliente'])->group(function () {
+        Route::get('/cliente/dashboard', [ClienteController::class, 'dashboard'])
+            ->name('cliente.dashboard');
+    });
+    ```
+
+    **Order status visibility:**
+
+    | Database value | Meaning | Evidence shown |
+    |----------------|---------|----------------|
+    | `pending` | Order registered and awaiting dispatch | No |
+    | `in_route` | Order has been dispatched | No |
+    | `delivered` | Order has been delivered | Yes — delivery photo |
+
+    <Note>
+    Customers access the platform through the same login screen as internal staff. The role middleware ensures they land on the `/cliente/dashboard` and cannot navigate to any other department's routes.
+    </Note>
+  </Accordion>
+</AccordionGroup>
+
+## Order lifecycle by role
+
+The following table shows which role is responsible at each stage of an order's life:
+
+| Stage | Role | Action | Resulting status |
+|-------|------|--------|-----------------|
+| 1 | Ventas | Registers the order with description | `pending` |
+| 2 | Almacen | Picks and packs materials from stock | `pending` (preparing) |
+| 2 (if needed) | Compras | Acquires missing materials from providers | `pending` (acquiring) |
+| 3 | Ruta | Dispatches the order and updates status | `in_route` |
+| 4 | Ruta | Uploads delivery photo confirming receipt | `delivered` |
+| — | Cliente | Views order status and delivery evidence at any stage | Read-only |
